@@ -882,6 +882,7 @@ def agent_runner_ui(
     output_key: Optional[str] = None,
     allow_edit_output: bool = True,
     height: int = 220,
+    uid: str = "",
 ) -> Tuple[str, Optional[LLMResult]]:
     """
     Returns (effective_output_text, last_result)
@@ -891,12 +892,15 @@ def agent_runner_ui(
     cfg = agents.get(agent_id, {})
     title = cfg.get("name", default_title)
 
+    key_prefix = f"{workspace}:{agent_id}" + (f":{uid}" if uid else "")
+
     # State keys
-    sys_key = f"{workspace}:{agent_id}:system"
-    model_key = f"{workspace}:{agent_id}:model"
-    mt_key = f"{workspace}:{agent_id}:max_tokens"
-    out_gen_key = f"{workspace}:{agent_id}:out_generated"
-    out_eff_key = output_key or f"{workspace}:{agent_id}:out_effective"
+    sys_key = f"{key_prefix}:system"
+    model_key = f"{key_prefix}:model"
+    mt_key = f"{key_prefix}:max_tokens"
+    out_gen_key = f"{key_prefix}:out_generated"
+    out_eff_key = output_key or f"{key_prefix}:out_effective"
+    temp_key = f"{key_prefix}:temperature"
 
     st.session_state.setdefault(sys_key, cfg.get("system_prompt", default_system))
     st.session_state.setdefault(model_key, cfg.get("model", default_model or st.session_state["global_default_model"]))
@@ -922,7 +926,6 @@ def agent_runner_ui(
         )
         # Temperature: default to global unless passed
         temp_val = float(temperature) if temperature is not None else float(st.session_state["global_temperature"])
-        temp_key = f"{workspace}:{agent_id}:temperature"
         st.session_state.setdefault(temp_key, temp_val)
         st.session_state[temp_key] = st.slider(
             t("temperature"),
@@ -943,9 +946,9 @@ def agent_runner_ui(
     # Run
     cols = st.columns([1, 1, 2])
     with cols[0]:
-        run_clicked = st.button(t("run"), key=f"{workspace}:{agent_id}:run_btn")
+        run_clicked = st.button(t("run"), key=f"{key_prefix}:run_btn")
     with cols[1]:
-        reset_clicked = st.button(t("reset_to_generated"), key=f"{workspace}:{agent_id}:reset_btn")
+        reset_clicked = st.button(t("reset_to_generated"), key=f"{key_prefix}:reset_btn")
     with cols[2]:
         st.caption("Handoff rule: the next step uses the *effective output* (edited) if present; otherwise uses generated output.")
 
@@ -963,7 +966,7 @@ def agent_runner_ui(
                 system_prompt=st.session_state[sys_key],
                 user_prompt=user_prompt,
                 max_tokens=int(st.session_state[mt_key]),
-                temperature=float(st.session_state[f"{workspace}:{agent_id}:temperature"]),
+                temperature=float(st.session_state[temp_key]),
             )
             if last_res.error:
                 st.error(last_res.error)
@@ -1001,21 +1004,22 @@ def agent_runner_ui(
 
     # Downloads
     dl1, dl2 = st.columns(2)
+    dl_file_name = safe_filename(agent_id + ('_' + uid if uid else ''))
     with dl1:
         st.download_button(
             t("download_md"),
             data=(st.session_state[out_eff_key] or "").encode("utf-8"),
-            file_name=f"{safe_filename(agent_id)}.md",
+            file_name=f"{dl_file_name}.md",
             mime="text/markdown",
-            key=f"{workspace}:{agent_id}:dl_md",
+            key=f"{key_prefix}:dl_md",
         )
     with dl2:
         st.download_button(
             t("download_txt"),
             data=(st.session_state[out_eff_key] or "").encode("utf-8"),
-            file_name=f"{safe_filename(agent_id)}.txt",
+            file_name=f"{dl_file_name}.txt",
             mime="text/plain",
-            key=f"{workspace}:{agent_id}:dl_txt",
+            key=f"{key_prefix}:dl_txt",
         )
 
     return st.session_state[out_eff_key], last_res
@@ -1120,6 +1124,7 @@ def render_tw_premarket():
         input_text=ctx,
         default_system="Draft a TFDA premarket application section in Markdown from the provided info.",
         height=240,
+        uid="premarket_draft"
     )
 
     # Example: Review agent (uses edited output)
@@ -1130,6 +1135,7 @@ def render_tw_premarket():
         input_text=out1,
         default_system="Review the drafted document, identify gaps, and propose improvements in Markdown. Do not invent facts.",
         height=240,
+        uid="premarket_review"
     )
 
     with st.expander(t("live_log"), expanded=False):
@@ -1606,6 +1612,7 @@ Text:
         input_text=transform_prompt,
         height=260,
         output_key=f"{workspace}:md",
+        uid="step2",
     )
 
     # Magics
@@ -1627,6 +1634,7 @@ Markdown:
         default_title="AI Formatting",
         input_text=fmt_input,
         height=220,
+        uid="fmt",
     )
 
     # AI Keywords (highlight)
@@ -1669,6 +1677,7 @@ Exactly 20 rows (excluding header). Do not invent.
         default_title="AI Entities",
         input_text=ent_input,
         height=260,
+        uid="ents",
     )
 
     # AI Chat
@@ -1689,6 +1698,7 @@ Question:
         default_title="AI Chat",
         input_text=chat_input,
         height=220,
+        uid="chat",
     )
 
     # AI Summary
@@ -1708,6 +1718,7 @@ Note:
         default_title="AI Summary",
         input_text=sum_input,
         height=220,
+        uid="sum",
     )
 
     # Two additional Magics (decided here): Action Items + Glossary
@@ -1730,6 +1741,7 @@ Note:
         default_title="Action Items",
         input_text=act_input,
         height=220,
+        uid="act",
     )
 
     st.markdown("---")
@@ -1748,6 +1760,7 @@ Note:
         default_title="Glossary",
         input_text=glo_input,
         height=240,
+        uid="glo",
     )
 
     with st.expander(t("live_log"), expanded=False):
