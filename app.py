@@ -894,11 +894,54 @@ def agent_runner_ui(
 
     key_prefix = f"{workspace}:{agent_id}" + (f":{uid}" if uid else "")
 
+    # State keys
+    sys_key = f"{key_prefix}:system"
+    model_key = f"{key_prefix}:model"
+    mt_key = f"{key_prefix}:max_tokens"
+    out_gen_key = f"{key_prefix}:out_generated"
+    out_eff_key = output_key or f"{key_prefix}:out_effective"
+    temp_key = f"{key_prefix}:temperature"
 
-    ########
-    # ------------------ REPLACE FROM HERE ------------------
-    # State key for the text_area widget
-    widget_key = f"{key_prefix}:widget_out"
+    st.session_state.setdefault(sys_key, cfg.get("system_prompt", default_system))
+    st.session_state.setdefault(model_key, cfg.get("model", default_model or st.session_state["global_default_model"]))
+    st.session_state.setdefault(mt_key, int(cfg.get("max_tokens", default_max_tokens or st.session_state["global_max_tokens"])))
+    st.session_state.setdefault(out_gen_key, "")
+    st.session_state.setdefault(out_eff_key, "")
+
+    st.markdown(f"### {title}")
+
+    with st.expander("Prompt / Model Controls", expanded=False):
+        st.session_state[model_key] = st.selectbox(
+            t("model"),
+            options=MODEL_CATALOG,
+            index=MODEL_CATALOG.index(st.session_state[model_key]) if st.session_state[model_key] in MODEL_CATALOG else 0,
+            key=f"{model_key}:widget",
+        )
+        st.session_state[mt_key] = st.slider(
+            t("max_tokens"),
+            min_value=256, max_value=8192,
+            value=int(st.session_state[mt_key]),
+            step=128,
+            key=f"{mt_key}:widget",
+        )
+        # Temperature: default to global unless passed
+        temp_val = float(temperature) if temperature is not None else float(st.session_state["global_temperature"])
+        st.session_state.setdefault(temp_key, temp_val)
+        st.session_state[temp_key] = st.slider(
+            t("temperature"),
+            min_value=0.0, max_value=1.0,
+            value=float(st.session_state[temp_key]),
+            step=0.05,
+            key=f"{temp_key}:widget",
+        )
+
+        st.session_state[sys_key] = st.text_area(
+            t("system_prompt"),
+            value=st.session_state[sys_key],
+            height=160,
+            help=prompt_help,
+            key=f"{sys_key}:widget",
+        )
 
     # Run
     cols = st.columns([1, 1, 2])
@@ -929,31 +972,24 @@ def agent_runner_ui(
                 st.error(last_res.error)
             else:
                 st.session_state[out_gen_key] = last_res.text or ""
-                # FIX: Always overwrite the UI with the fresh generated text
-                st.session_state[out_eff_key] = st.session_state[out_gen_key]
-                st.session_state[widget_key] = st.session_state[out_gen_key] # Forces the UI widget to refresh!
+                # If effective output is empty, initialize it to generated
+                if not (st.session_state[out_eff_key] or "").strip():
+                    st.session_state[out_eff_key] = st.session_state[out_gen_key]
 
     if reset_clicked:
         st.session_state[out_eff_key] = st.session_state.get(out_gen_key, "")
-        st.session_state[widget_key] = st.session_state.get(out_gen_key, "") # Forces the UI widget to refresh!
 
     # Output editor + preview
     st.markdown(f"#### {t('output')}")
     c1, c2 = st.columns([1, 1])
     with c1:
         if allow_edit_output:
-            # FIX: Ensure widget key is initialized
-            if widget_key not in st.session_state:
-                st.session_state[widget_key] = st.session_state[out_eff_key]
-                
-            # FIX: Remove 'value=' parameter. Let Streamlit manage it strictly via 'key'
-            st.text_area(
+            st.session_state[out_eff_key] = st.text_area(
                 "Editable Output (effective handoff)",
+                value=st.session_state[out_eff_key],
                 height=height,
-                key=widget_key,
+                key=f"{out_eff_key}:widget",
             )
-            # Sync any manual edits back to our main variable
-            st.session_state[out_eff_key] = st.session_state[widget_key]
         else:
             st.text_area(
                 "Output",
@@ -987,8 +1023,7 @@ def agent_runner_ui(
         )
 
     return st.session_state[out_eff_key], last_res
-    # ------------------ END OF REPLACEMENT ------------------
-    
+
 
 # ---------------------------
 # Dashboard
